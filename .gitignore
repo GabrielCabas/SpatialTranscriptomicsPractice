@@ -1,0 +1,9 @@
+# Datos: se descargan con 00_descargar_datos.Rmd
+data/
+# Resultados y documentos generados al compilar
+output/
+*.html
+render_*.log
+.Rhistory
+.RData
+.Rproj.user/

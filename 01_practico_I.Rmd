@@ -1,0 +1,185 @@
+---
+title: "Spatial Transcriptomics · Práctico I"
+subtitle: "Del tejido a los clusters"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center")
+```
+
+## Objetivos
+
+Explorar un corte de corteza prefrontal humana (Visium) con Seurat:
+
+- ¿Cuántos spots y genes tiene el dataset?
+- Evaluar la calidad **sobre el tejido**. ¿Hay regiones con menos UMI? ¿Es un problema técnico o biológico?
+- Normalizar, reducir dimensiones y clusterizar (igual que en la sesión 2). ¿Cuántos clusters se obtienen?
+- Visualizar los clusters en UMAP **y sobre el tejido**. ¿Forman regiones continuas?
+- Identificar genes con patrón espacial (Moran's I). ¿Coinciden con marcadores de capas conocidos?
+- Comparar los clusters con las capas anotadas por expertos. ¿Qué tan bien coinciden (ARI)?
+
+*Antes de empezar:* corre `00_descargar_datos.Rmd` para tener la carpeta `data/`.
+
+```{r librerias}
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+
+datos <- "data/dlpfc_151673"
+dir.create("output", showWarnings = FALSE)
+```
+
+## 1. Cargar los datos
+
+`Load10X_Spatial()` lee en un solo paso la matriz (`.h5`) y la carpeta `spatial/` (imagen + coordenadas).
+
+```{r cargar}
+obj <- Load10X_Spatial(datos, filename = "filtered_feature_bc_matrix.h5")
+obj
+```
+
+Agregamos las capas anotadas por expertos y dejamos solo los spots que tienen capa:
+
+```{r capas}
+capas <- read.delim(file.path(datos, "layer_annotations.tsv"), header = FALSE,
+                    col.names = c("barcode", "muestra", "capa"))
+obj$capa <- capas$capa[match(colnames(obj), capas$barcode)]
+obj <- subset(obj, cells = colnames(obj)[!is.na(obj$capa)])
+
+cat("Spots:", ncol(obj), "· Genes:", nrow(obj), "\n")
+table(obj$capa)
+```
+
+> **Lo nuevo respecto a la sesión 2:** el assay se llama `Spatial` (no `RNA`) y el objeto trae la imagen
+> en `obj@images`. Por eso las métricas se llaman `nCount_Spatial` y `nFeature_Spatial`.
+
+La "respuesta correcta": capas L1 → L6 desde la superficie hacia adentro, y la sustancia blanca (WM).
+
+```{r ver-capas, fig.width = 6, fig.height = 5}
+SpatialDimPlot(obj, group.by = "capa", pt.size.factor = 2)
+```
+
+## 2. Control de calidad sobre el tejido
+
+Las mismas métricas de la sesión 2, pero ahora las podemos **ver sobre el tejido**.
+
+```{r qc, fig.width = 10, fig.height = 5}
+obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
+summary(obj[[]][, c("nFeature_Spatial", "nCount_Spatial", "percent.mt")])
+
+SpatialFeaturePlot(obj, features = c("nCount_Spatial", "percent.mt"), pt.size.factor = 2)
+```
+
+**Pregunta:** ¿las zonas con menos UMI son un problema técnico o biológico?
+
+> Pista: compara con el mapa de capas. La sustancia blanca tiene menos UMI porque tiene menos cuerpos
+> neuronales: es **biología**. Si filtráramos esos spots, borraríamos una región completa del tejido.
+
+## 3. Normalización, PCA y clustering
+
+Exactamente el mismo flujo de la sesión 2: **todavía no usamos las coordenadas**.
+
+```{r clustering}
+obj <- NormalizeData(obj)
+obj <- FindVariableFeatures(obj, nfeatures = 2000)
+obj <- ScaleData(obj)
+obj <- RunPCA(obj)
+
+obj <- FindNeighbors(obj, dims = 1:20)
+obj <- FindClusters(obj, resolution = 0.5, random.seed = 42)
+obj <- RunUMAP(obj, dims = 1:20, seed.use = 42)
+
+table(obj$seurat_clusters)
+```
+
+## 4. Clusters en UMAP y sobre el tejido
+
+`SpatialDimPlot()` es la novedad: dibuja los clusters sobre la imagen.
+
+```{r umap-tejido, fig.width = 11, fig.height = 5}
+DimPlot(obj, label = TRUE) + SpatialDimPlot(obj, label = TRUE, pt.size.factor = 2)
+```
+
+**Pregunta:** ¿los clusters forman bandas parecidas a las capas?
+
+## 5. Expresión de genes sobre el tejido
+
+`SpatialFeaturePlot()` hace lo mismo con la expresión de un gen.
+
+| Gen | Marca |
+|---|---|
+| MOBP | Sustancia blanca (mielina) |
+| PCP4 | Capa 5 |
+| SNAP25 | Neuronas (toda la sustancia gris) |
+| HPCAL1 | Capa 2 |
+
+```{r marcadores, fig.width = 16, fig.height = 4.5}
+SpatialFeaturePlot(obj, features = c("MOBP", "PCP4", "SNAP25", "HPCAL1"),
+                   ncol = 4, pt.size.factor = 2.5)
+```
+
+## 6. Genes con patrón espacial: Moran's I
+
+**Moran's I** mide si un gen forma **manchas** en el tejido o está **repartido al azar**: es una
+correlación entre cada spot y sus vecinos.
+
+- I ≈ 1: los vecinos se parecen (el gen forma regiones o gradientes).
+- I ≈ 0: la posición no importa.
+
+> A diferencia de `FindAllMarkers` (sesión 3), que busca marcadores **de cluster**, Moran's I busca genes
+> **de espacio**, sin necesitar clusters.
+
+Lo calculamos sobre los 500 genes más variables (con el paquete `Rfast2` instalado toma segundos).
+
+```{r moran}
+obj <- FindSpatiallyVariableFeatures(obj, assay = "Spatial",
+                                     features = VariableFeatures(obj)[1:500],
+                                     selection.method = "moransi")
+top <- head(SpatiallyVariableFeatures(obj, method = "moransi"), 6)
+top
+```
+
+```{r moran-plot, fig.width = 12, fig.height = 8}
+SpatialFeaturePlot(obj, features = top, ncol = 3, pt.size.factor = 2)
+```
+
+**Pregunta:** ¿qué tienen en común los genes con mayor Moran's I? ¿A qué región corresponden?
+
+## 7. ¿Los clusters recuperan las capas?
+
+Comparamos los clusters con la anotación de expertos usando el **ARI** (*Adjusted Rand Index*):
+**1** = concordancia perfecta, **0** = no mejor que el azar.
+
+```{r ari}
+ari_seurat <- mclust::adjustedRandIndex(obj$capa, obj$seurat_clusters)
+ari_seurat
+
+table(Cluster = obj$seurat_clusters, Capa = obj$capa)
+```
+
+**Preguntas:**
+
+- ¿Qué capas quedan bien separadas? ¿Cuáles se mezclan?
+- ¿Hay algún cluster que junte capas que están **lejos** en el tejido?
+
+## Conclusión
+
+El clustering clásico **ignora las coordenadas**: trata cada spot como una célula suelta. Se insinúan
+bandas, pero las capas delgadas se mezclan con sus vecinas.
+
+**¿Y si usamos el espacio dentro del análisis, no solo para visualizar?** → Práctico II.
+
+```{r guardar}
+saveRDS(obj, "output/practico_I.rds")
+```
+
+## Opcional
+
+- Cambia la `resolution` de `FindClusters()`. ¿Qué resolución reproduce mejor las capas (mayor ARI)?
+- Repite el análisis con `SCTransform()` en vez de `NormalizeData()` (lo recomienda Seurat para Visium).
+  ¿Cambia el resultado?

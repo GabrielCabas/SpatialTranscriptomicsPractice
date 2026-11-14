@@ -1,0 +1,133 @@
+---
+title: "Spatial Transcriptomics · Práctico II"
+subtitle: "Dominios espaciales con BayesSpace"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center")
+```
+
+## Objetivos
+
+Detectar dominios espaciales con BayesSpace:
+
+- Construir un `SingleCellExperiment` con las coordenadas de la grilla.
+- Ejecutar BayesSpace con 7 dominios (6 capas + sustancia blanca).
+- Visualizar los dominios sobre el tejido. ¿Se parecen a las capas?
+- Calcular el ARI y compararlo con el clustering clásico.
+- ¿Qué capas se confunden más? ¿Por qué?
+
+*Antes de empezar:* corre `01_practico_I.Rmd`, que deja el objeto en `output/practico_I.rds`.
+
+```{r librerias}
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+library(SingleCellExperiment)
+library(BayesSpace)
+
+datos <- "data/dlpfc_151673"
+obj <- readRDS("output/practico_I.rds")
+```
+
+## La idea: una votación de vecinos
+
+Un **dominio espacial** es un cluster que tiene en cuenta la ubicación. En BayesSpace cada spot tiene
+dos fuentes de información:
+
+1. **Su propia expresión** ("me parezco al grupo A").
+2. **Sus 6 vecinos** ("la mayoría somos del grupo B").
+
+BayesSpace combina ambas: si la expresión de un spot es ambigua, gana la opinión de los vecinos.
+El parámetro **`gamma`** controla cuánto pesa esa opinión (0 = clustering normal; 3 es lo recomendado
+para Visium).
+
+## 1. Preparar los datos
+
+BayesSpace trabaja con objetos `SingleCellExperiment` y necesita la **posición de cada spot en la grilla**
+de Visium (fila y columna), que viene en `tissue_positions_list.csv`.
+
+> **Atención:** las columnas deben llamarse `array_row` y `array_col`. Con otros nombres aparece el
+> error *"subscript contains invalid names"*.
+
+```{r preparar}
+pos <- read.csv(file.path(datos, "spatial/tissue_positions_list.csv"), header = FALSE,
+                col.names = c("barcode", "in_tissue", "row", "col", "imagerow", "imagecol"))
+pos <- pos[match(colnames(obj), pos$barcode), ]
+
+sce <- SingleCellExperiment(
+  assays  = list(counts = LayerData(obj, layer = "counts")),
+  colData = DataFrame(array_row = pos$row, array_col = pos$col)
+)
+
+set.seed(42)
+sce <- spatialPreprocess(sce, platform = "Visium", n.PCs = 15, n.HVGs = 2000)
+sce
+```
+
+## 2. Ejecutar BayesSpace
+
+| Parámetro | ¿Qué controla? |
+|---|---|
+| `q` | Número de dominios a buscar |
+| `d` | Número de PCs usados |
+| `gamma` | Peso de la opinión de los vecinos (suavidad espacial) |
+| `nrep` / `burn.in` | Iteraciones del algoritmo (más = más estable, pero más lento) |
+
+Toma **~3–4 minutos** con `nrep = 10000`. En computadores lentos se puede bajar a `nrep = 5000`.
+
+```{r bayesspace}
+set.seed(42)
+sce <- spatialCluster(sce, q = 7, platform = "Visium", d = 15, init.method = "mclust",
+                      model = "t", gamma = 3, nrep = 10000, burn.in = 1000)
+
+obj$dominio <- factor(sce$spatial.cluster)
+table(obj$dominio)
+```
+
+## 3. Comparar con las capas
+
+```{r ari}
+ari_seurat <- mclust::adjustedRandIndex(obj$capa, obj$seurat_clusters)
+ari_bs     <- mclust::adjustedRandIndex(obj$capa, obj$dominio)
+
+c(Seurat = ari_seurat, BayesSpace = ari_bs)
+
+table(Dominio = obj$dominio, Capa = obj$capa)
+```
+
+```{r comparacion, fig.width = 16, fig.height = 5}
+(SpatialDimPlot(obj, group.by = "capa", pt.size.factor = 2) +
+   ggtitle("Capas (expertos)")) |
+(SpatialDimPlot(obj, group.by = "seurat_clusters", pt.size.factor = 2) +
+   ggtitle(sprintf("Seurat · ARI %.2f", ari_seurat))) |
+(SpatialDimPlot(obj, group.by = "dominio", pt.size.factor = 2) +
+   ggtitle(sprintf("BayesSpace · ARI %.2f", ari_bs)))
+```
+
+**Preguntas:**
+
+- ¿Mejoró el ARI respecto al clustering clásico?
+- Mira la tabla dominio × capa. ¿Qué capas quedan bien separadas? ¿Hay alguna que **desaparezca**?
+- Si una capa es muy delgada, sus spots quedan rodeados de vecinos de otras capas. ¿Qué hace la
+  "votación de vecinos" con ellos? **¿Qué perdimos al suavizar?**
+
+## Conclusión
+
+Con los mismos datos y los mismos genes, la única diferencia es que BayesSpace **sabe quién es vecino
+de quién**: el espacio agrega información. Pero suavizar tiene un costo: las estructuras finas pueden
+desaparecer aunque sean reales.
+
+```{r guardar}
+saveRDS(obj, "output/practico_II.rds")
+```
+
+## Opcional
+
+- Prueba distintos valores de `q`. ¿Qué pasa si eliges menos de 7 dominios?
+- Prueba `gamma = 1` y `gamma = 5`. ¿Cómo cambian los dominios y el ARI?

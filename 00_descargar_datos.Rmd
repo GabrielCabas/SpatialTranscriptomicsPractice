@@ -1,0 +1,89 @@
+---
+title: "Spatial Transcriptomics · Descarga de datos"
+subtitle: "Magíster en Informática Médica"
+output:
+  html_document:
+    toc: true
+    theme: flatly
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Los datos
+
+Vamos a trabajar con un corte de **corteza prefrontal dorsolateral humana** medido con **10x Visium**:
+la muestra 151673 de Maynard et al. (2021), *Nature Neuroscience* 24:425–436.
+
+- ~3.600 spots de 55 µm, cada uno con la expresión de ~33.500 genes.
+- Una imagen H&E del mismo corte.
+- **Capas anotadas a mano por expertos** (L1–L6 y sustancia blanca, WM). Las vamos a usar como
+  "respuesta correcta" para evaluar qué tan bien funcionan los métodos.
+
+Este chunk descarga todo desde las fuentes oficiales (spatialLIBD, del Lieber Institute) y deja la
+carpeta `data/dlpfc_151673/` al lado de este archivo, con la misma estructura que entrega Space Ranger.
+Son ~20 MB y toma unos segundos.
+
+## Descarga
+
+```{r descarga}
+options(timeout = 120)
+
+# Descarga con hasta 3 intentos (por si la red falla a mitad de camino)
+bajar <- function(url, archivo) {
+  for (intento in 1:3) {
+    ok <- tryCatch(download.file(url, archivo, mode = "wb", quiet = TRUE) == 0,
+                   error = function(e) FALSE, warning = function(w) FALSE)
+    if (ok) return(invisible(TRUE))
+    message("  falló el intento ", intento, " - reintentando...")
+  }
+  stop("No se pudo descargar ", url, ". Revisa tu conexión y vuelve a correr este chunk.")
+}
+
+destino <- file.path("data", "dlpfc_151673")
+dir.create(file.path(destino, "spatial"), recursive = TRUE, showWarnings = FALSE)
+
+s3  <- "https://spatial-dlpfc.s3.us-east-2.amazonaws.com/h5/151673_filtered_feature_bc_matrix.h5"
+git <- "https://raw.githubusercontent.com/LieberInstitute/HumanPilot/master/10X"
+
+archivos <- c(
+  "filtered_feature_bc_matrix.h5"     = s3,
+  "spatial/tissue_positions_list.csv" = file.path(git, "151673/tissue_positions_list.txt"),
+  "spatial/scalefactors_json.json"    = file.path(git, "151673/scalefactors_json.json"),
+  "spatial/tissue_lowres_image.png"   = file.path(git, "151673/tissue_lowres_image.png"),
+  "spatial/tissue_hires_image.png"    = file.path(git, "151673/tissue_hires_image.png")
+)
+for (f in names(archivos)) {
+  message("Descargando ", f, " ...")
+  bajar(archivos[[f]], file.path(destino, f))
+}
+```
+
+## Capas anotadas por expertos
+
+El archivo original trae las capas de 12 muestras; nos quedamos solo con la 151673.
+
+```{r capas}
+tmp <- tempfile(fileext = ".tsv")
+bajar(file.path(git, "barcode_level_layer_map.tsv"), tmp)
+capas <- read.delim(tmp, header = FALSE)
+capas <- capas[capas$V2 == 151673, ]
+write.table(capas, file.path(destino, "layer_annotations.tsv"),
+            sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
+
+table(capas$V3)
+```
+
+## ¿Qué descargamos?
+
+```{r archivos}
+list.files(destino, recursive = TRUE)
+```
+
+- `filtered_feature_bc_matrix.h5`: la **matriz spot × gen** (igual que en single-cell).
+- `spatial/`: lo nuevo respecto a single-cell. Contiene la **imagen**, la **posición de cada spot** y la
+  **escala** para dibujar los spots sobre la imagen.
+- `layer_annotations.tsv`: las capas anotadas (barcode, muestra, capa).
+
+Ya podemos pasar al **Práctico I**.

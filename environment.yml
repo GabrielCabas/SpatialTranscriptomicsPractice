@@ -1,0 +1,34 @@
+# Entorno R para el práctico de Spatial Transcriptomics (Magíster en Informática Médica)
+# Crear:     micromamba create -f environment.yml -y      (o: conda env create -f environment.yml)
+# Post:      micromamba run -n spatial-r Rscript setup_extra.R   (instala Rfast2 desde CRAN)
+# Activar:   micromamba activate spatial-r
+name: spatial-r
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.5
+  # Núcleo (igual que en las clases de scRNA-seq)
+  - r-seurat=5.5
+  - r-tidyverse
+  - r-patchwork
+  - r-rmarkdown                 # compilar los .Rmd
+  - bioconductor-singlecellexperiment
+  # Lectura de datos 10x / Visium
+  - r-hdf5r
+  - r-png
+  - r-jsonlite
+  # Análisis espacial
+  - bioconductor-spatialexperiment
+  - bioconductor-bayesspace     # dominios espaciales
+  - r-ape                       # Moran's I (FindSpatiallyVariableFeatures)
+  - r-rfast                     # dependencia de Rfast2 (Moran's I rápido)
+  - r-rcppparallel
+  - r-mclust                    # ARI: mclust::adjustedRandIndex
+  # Dependencias de spacexr (RCTD, opcional)
+  - r-quadprog
+  - r-doparallel
+  - r-foreach
+  - r-remotes
+  # Utilidades
+  - bioconductor-glmgampoi     # acelera SCTransform
