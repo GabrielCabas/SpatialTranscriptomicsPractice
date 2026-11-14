@@ -11,6 +11,30 @@ output:
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
+## 0. Verificar el entorno
+
+Antes de descargar nada, revisamos que estén todos los paquetes del práctico.
+
+```{r verificar}
+cat("R:", R.version.string, "\n")
+if (getRversion() < "4.5.0")
+  warning("El práctico se probó con R 4.5. Revisa que RStudio esté usando el R del entorno ",
+          "(R.home() debe apuntar a la carpeta del entorno spatial-r).")
+
+paquetes <- c("Seurat", "tidyverse", "patchwork", "hdf5r", "mclust",
+              "SingleCellExperiment", "BayesSpace", "rmarkdown")
+estado <- sapply(paquetes, requireNamespace, quietly = TRUE)
+print(estado)
+
+if (!all(estado))
+  stop("Faltan paquetes: ", paste(paquetes[!estado], collapse = ", "),
+       ". Revisa la sección 'Problemas frecuentes' del README.")
+
+if (!requireNamespace("Rfast2", quietly = TRUE))
+  message("Aviso: falta Rfast2. El práctico funciona igual, pero Moran's I va a tardar varios ",
+          "minutos. Para instalarlo: Rscript setup_extra.R")
+```
+
 ## Los datos
 
 Vamos a trabajar con un corte de **corteza prefrontal dorsolateral humana** medido con **10x Visium**:

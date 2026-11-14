@@ -62,6 +62,29 @@ BiocManager::install(c("SingleCellExperiment", "BayesSpace"))
 
 Las carpetas `data/` y `output/` se crean solas y no se suben al repositorio.
 
+## Problemas frecuentes
+
+**¿RStudio está usando el R correcto?** En la consola de RStudio, `R.home()` debe apuntar a la carpeta del
+entorno (por ejemplo `.../envs/spatial-r/lib/R`). Si dice `/usr/lib/R` o similar, RStudio está usando el R
+del sistema, que no tiene los paquetes: ciérralo y ábrelo **desde una terminal con el entorno activado**
+(`micromamba activate spatial-r` y luego `rstudio &`). Si lo abres desde el menú de aplicaciones, no pasa
+por el entorno.
+
+**`package 'Biobase' could not be loaded`** (u otro paquete de Bioconductor) **después de instalar o
+actualizar el entorno:** la sesión de RStudio quedó abierta con la versión anterior de R en memoria.
+Cierra RStudio por completo y vuelve a abrirlo desde la terminal con el entorno activado.
+
+**No instales RStudio con conda.** El paquete `rstudio-desktop` de conda-forge es antiguo y exige R 4.3:
+instalarlo baja la versión de R del entorno y rompe BayesSpace. Usa el RStudio normal de tu sistema.
+
+**Aviso `package '...' was built under R version 4.5.x`:** es inofensivo. El paquete se compiló con una
+versión menor de R un poco distinta y funciona igual.
+
+**Moran's I tarda varios minutos:** falta `Rfast2`. Instálalo con `micromamba run -n spatial-r Rscript setup_extra.R`.
+
+**No encuentra `data/dlpfc_151673`:** el directorio de trabajo no es la carpeta del repositorio, o no
+corriste `00_descargar_datos.Rmd`. Revisa con `getwd()`.
+
 ## Fuente de los datos
 
 - Maynard KR, Collado-Torres L, et al. (2021). Transcriptome-scale spatial gene expression in the human

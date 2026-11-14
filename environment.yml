@@ -2,6 +2,10 @@
 # Crear:     micromamba create -f environment.yml -y      (o: conda env create -f environment.yml)
 # Post:      micromamba run -n spatial-r Rscript setup_extra.R   (instala Rfast2 desde CRAN)
 # Activar:   micromamba activate spatial-r
+#
+# R queda fijo en 4.5 porque BayesSpace en bioconda solo existe para R 4.5.
+# RStudio NO se instala aquí: la versión de conda-forge es antigua y exige R 4.3.
+# Usa el RStudio de tu sistema y ábrelo desde una terminal con este entorno activado.
 name: spatial-r
 channels:
   - conda-forge
@@ -13,22 +17,16 @@ dependencies:
   - r-tidyverse
   - r-patchwork
   - r-rmarkdown                 # compilar los .Rmd
-  - bioconductor-singlecellexperiment
   # Lectura de datos 10x / Visium
-  - r-hdf5r
-  - r-png
-  - r-jsonlite
+  - r-hdf5r                     # archivos .h5
+  - r-png                       # imagen del tejido
+  - r-jsonlite                  # factores de escala
   # Análisis espacial
-  - bioconductor-spatialexperiment
-  - bioconductor-bayesspace     # dominios espaciales
-  - r-ape                       # Moran's I (FindSpatiallyVariableFeatures)
-  - r-rfast                     # dependencia de Rfast2 (Moran's I rápido)
-  - r-rcppparallel
+  - bioconductor-singlecellexperiment
+  - bioconductor-bayesspace     # dominios espaciales (Práctico II)
   - r-mclust                    # ARI: mclust::adjustedRandIndex
-  # Dependencias de spacexr (RCTD, opcional)
-  - r-quadprog
-  - r-doparallel
-  - r-foreach
-  - r-remotes
-  # Utilidades
-  - bioconductor-glmgampoi     # acelera SCTransform
+  - r-ape                       # Moran's I (respaldo si falta Rfast2)
+  - r-rfast                     # dependencias de Rfast2 (Moran's I rápido),
+  - r-rcppparallel              #   que se instala con setup_extra.R
+  # Opcional
+  - bioconductor-glmgampoi      # acelera SCTransform (ejercicio opcional del Práctico I)
